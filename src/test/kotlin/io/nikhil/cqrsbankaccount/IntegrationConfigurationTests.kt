@@ -7,10 +7,12 @@ import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.context.ApplicationContext
 import org.springframework.data.mongodb.MongoTransactionManager
 import org.springframework.integration.channel.DirectChannel
+import org.testcontainers.junit.jupiter.Testcontainers
 import kotlin.test.assertEquals
 
+@Testcontainers(disabledWithoutDocker = true)
 @SpringBootTest(properties = ["app.projection.enabled=false"])
-class IntegrationConfigurationTests {
+class IntegrationConfigurationTests : MongoIntegrationTest() {
     @Autowired
     private lateinit var applicationContext: ApplicationContext
 

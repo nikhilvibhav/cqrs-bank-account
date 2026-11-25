@@ -28,24 +28,43 @@ Run the app:
 .\gradlew.bat bootRun
 
 # Linux/macOS
-bash ./gradlew bootRun
+./gradlew bootRun
 ```
 
 OpenAPI UI: <http://localhost:8080/swagger-ui/index.html>
 
 ## API
 
+> The API has no authentication or authorisation: anyone who can reach it can open, change and read any account. That is acceptable for a local sample only.
+
+| Method and path | Purpose | Success |
+| --- | --- | --- |
+| `POST /api/v1/accounts` | Open an account | `201`, `Location` header |
+| `POST /api/v1/accounts/{id}/deposits` | Deposit funds | `200` |
+| `POST /api/v1/accounts/{id}/withdrawals` | Withdraw funds | `200` |
+| `POST /api/v1/accounts/{id}/closure` | Close the account (it stays readable, with `closed: true`) | `200` |
+| `GET /api/v1/accounts/{id}` | Read an account | `200`, `ETag` header |
+| `GET /api/v1/accounts?page=0&size=20&closed=false` | List accounts, oldest first | `200` |
+
 Open an account:
 
 ```http
-POST /api/v1/open-bank-account
+POST /api/v1/accounts
 Content-Type: application/json
 Idempotency-Key: open-ada-001
 
 {"accountHolder":"Ada Lovelace","accountType":"SAVINGS","openingBalance":100.00}
 ```
 
-Deposit or withdraw:
+```http
+HTTP/1.1 201 Created
+Location: http://localhost:8080/api/v1/accounts/6f1c…
+ETag: "0"
+
+{"accountId":"6f1c…","version":0,"message":"Bank account opened successfully."}
+```
+
+Deposit (withdrawals take the same body):
 
 ```http
 POST /api/v1/accounts/{id}/deposits
@@ -55,17 +74,35 @@ Idempotency-Key: deposit-ada-001
 {"amount":25.00}
 ```
 
-Use `/api/v1/accounts/{id}/withdrawals` for withdrawals. Read an account with `GET /api/v1/accounts/{id}`, list accounts with `GET /api/v1/accounts`, and close an account with `DELETE /api/v1/close-bank-account/{id}`. All three write operations accept an optional `Idempotency-Key` header.
+All write operations accept an optional `Idempotency-Key` header, and return the account's event `version` after the change, in the body and as the `ETag`. Because the read model is updated asynchronously, a client that needs to read its own write polls `GET /api/v1/accounts/{id}` until that response's `ETag` (the read model's version) reaches the version its write returned.
+
+Amounts must be positive (an opening balance may be zero), with at most 2 decimal places and 13 digits before the decimal point. The account holder must not be blank and is at most 100 characters. `GET /api/v1/accounts` returns `{"items":[…],"page":0,"size":20,"totalItems":…}`; `size` is at most 100 and `closed` is an optional filter. There is no currency: every amount is in the same unit.
 
 ### Idempotency keys
 
-The client creates a unique opaque key (for example, a UUID) for each logical write and reuses that key with the exact same request if retrying after a timeout or uncertain response. A repeated key and payload returns the original result without appending another event. Reusing the key with a different operation or payload is rejected. Keys are optional; requests without one are treated as new commands on every attempt. Receipts are stored in MongoDB and currently have no expiry.
+The client creates a unique opaque key (for example, a UUID) for each logical write and reuses that key with the exact same request if retrying after a timeout or uncertain response. A repeated key and payload returns the original result without appending another event. Reusing the key with a different operation or payload is rejected. Keys are optional; requests without one are treated as new commands on every attempt. Keys are global rather than per client, because the API has no authentication yet.
+
+A key is remembered for `app.idempotency.receipt-ttl` (default 24 hours); after that, a request with the same key runs as a new command. Only successful commands are remembered: if a command is rejected (for example, insufficient funds), a retry with the same key runs again against the account's current state and may succeed.
 
 ### Account rules and consistency
 
-Amounts use decimal values, not floating-point numbers. Opening balances must be non-negative; deposits and withdrawals must be positive. Accounts can only be closed at a zero balance. Invalid requests return `400`, missing accounts return `404`, and business-rule conflicts (including a key reused with a different payload) return `409`.
+Amounts use decimal values, not floating-point numbers. Opening balances must be non-negative; deposits and withdrawals must be positive. Accounts can only be closed at a zero balance. Errors are returned as RFC 9457 problem details (`application/problem+json`) with a `title` and `detail`:
 
-Each command's versioned events and idempotency receipt are committed in one MongoDB transaction. A unique `(aggregateIdentifier, version)` index and expected-version check protect the event stream from conflicting writes. MongoDB transactions do not include the read model: a scheduled projection worker reads the event log, and retries failed accounts on later polls. The read model stores the last applied event version with the account data, so duplicate deliveries are ignored and version gaps are retried instead of corrupting the balance. A read immediately after a successful command may therefore briefly return the previous projection.
+| Status | When |
+| --- | --- |
+| `400` | Malformed or invalid request; validation failures list each field in `errors` (`[{"field":"amount","message":"…"}]`) |
+| `404` | Account not found |
+| `409` | The account kept being changed by concurrent requests after every retry; retrying later may succeed |
+| `422` | Business rule violated: insufficient funds, account closed, closing with a non-zero balance, or an idempotency key reused with a different payload |
+| `500` | Unexpected error; the detail is generic and the cause is only logged |
+
+Each command's versioned events and idempotency receipt are committed in one MongoDB transaction. A unique `(aggregateIdentifier, version)` index and expected-version check protect the event stream from conflicting writes. When a command loses a race with another request on the same account, the server retries it from a fresh read of the account, re-checking the business rules, up to `app.commands.max-attempts` times (default 5) before returning `409`. Concurrent requests with the same idempotency key record the command once and all return its result. MongoDB transactions do not include the read model. A projection worker follows the event store's MongoDB change stream and saves its position (the stream's resume token) in `projectionCheckpoints`, so after a restart it continues where it stopped. For each new event it applies every event after the version the read model has stored for that account, so duplicate deliveries are ignored and gaps are filled in. An account that fails to project is recorded in `projectionRetries` and retried every `app.projection.retry-interval` (default 1 second). A read immediately after a successful command may therefore briefly return the previous projection.
+
+Every instance with `app.projection.enabled=true` follows the stream. That is safe, because the read model's version check prevents double-applying, but it repeats the work, so enable the projection on one instance only.
+
+To rebuild the read model from the event store, stop the application, drop the `accounts`, `projectionCheckpoints` and `projectionRetries` collections, and start it again. Without a checkpoint, the worker replays every account's events.
+
+Indexes, including the TTL index that expires idempotency receipts, are created at startup, so the application needs MongoDB to start. Stored events record a stable type alias (for example `AccountOpened`) rather than a Kotlin class name; see `AccountEvent` for how to evolve them.
 
 ## Tests and CI
 
@@ -76,14 +113,22 @@ Run tests locally:
 .\gradlew.bat test
 
 # Linux/macOS
-bash ./gradlew test --no-daemon
+./gradlew test --no-daemon
 ```
 
 Kotlin sources and Gradle scripts are formatted with [Spotless](https://github.com/diffplug/spotless) and ktlint, using the rules in `.editorconfig`. `check` (and therefore `build`) fails on unformatted code:
 
 ```shell
-bash ./gradlew spotlessCheck   # report violations
-bash ./gradlew spotlessApply   # fix them
+./gradlew spotlessCheck   # report violations
+./gradlew spotlessApply   # fix them
 ```
 
-The Mongo persistence integration tests start a MongoDB replica set with Testcontainers. They verify event and receipt persistence, idempotency, expected-version checks, and idempotent projection updates. They run when Docker is available and are skipped otherwise. GitHub Actions runs the formatting check and the complete test suite for pull requests targeting `main` and for pushes to `main`, using Java 25 and Docker.
+The Mongo persistence integration tests start a MongoDB replica set with Testcontainers. They verify event and receipt persistence, idempotency, expected-version checks, retries of concurrent commands, and idempotent projection updates. They run when Docker is available and are skipped otherwise. With Podman, point Testcontainers at the Podman socket:
+
+```shell
+export DOCKER_HOST="unix://$(podman machine inspect --format '{{.ConnectionInfo.PodmanSocket.Path}}')"
+export TESTCONTAINERS_RYUK_DISABLED=true
+./gradlew test
+```
+
+GitHub Actions runs the formatting check and the complete test suite for pull requests targeting `main` and for pushes to `main`, using Java 25 and Docker.

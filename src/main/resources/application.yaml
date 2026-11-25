@@ -4,6 +4,13 @@ spring:
   mongodb:
     database: cqrs_bank_account
 app:
+  commands:
+    # Attempts per command when another request changes the same account concurrently; then 409.
+    max-attempts: 5
+  idempotency:
+    # How long a command's receipt is kept, i.e. how long a client may retry with the same key.
+    receipt-ttl: 24h
   projection:
     enabled: true
-    poll-interval-ms: 1000
+    # How often accounts whose projection failed are retried.
+    retry-interval: 1s

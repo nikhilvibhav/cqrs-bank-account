@@ -1,45 +1,40 @@
 package io.nikhil.cqrsbankaccount.core.infra
 
+import com.mongodb.MongoException
+import io.nikhil.cqrsbankaccount.core.commands.CommandResult
 import io.nikhil.cqrsbankaccount.core.events.BaseEvent
 import io.nikhil.cqrsbankaccount.core.events.CommandReceipt
 import io.nikhil.cqrsbankaccount.core.events.EventModel
-import org.springframework.dao.DuplicateKeyException
+import io.nikhil.cqrsbankaccount.core.exceptions.ConcurrencyConflictException
+import io.nikhil.cqrsbankaccount.core.exceptions.IdempotencyKeyReusedException
 import org.springframework.data.domain.Sort
 import org.springframework.data.mongodb.core.MongoTemplate
-import org.springframework.data.mongodb.core.index.Index
 import org.springframework.data.mongodb.core.query.Criteria
 import org.springframework.data.mongodb.core.query.Query
 import org.springframework.stereotype.Repository
 import org.springframework.transaction.support.TransactionTemplate
-import java.util.concurrent.atomic.AtomicBoolean
 
 @Repository
 class MongoEventStore(
     private val mongoTemplate: MongoTemplate,
     private val transactionTemplate: TransactionTemplate,
 ) : EventStore {
-    private val indexesReady = AtomicBoolean(false)
-
     override fun saveEvents(
         aggregateId: String,
         events: Iterable<BaseEvent>,
         expectedVersion: Int,
         commandId: String,
         commandFingerprint: String,
-    ): String {
+    ): CommandResult {
         val newEvents = events.toList()
         require(newEvents.isNotEmpty()) { "Cannot record a command without events." }
-
-        ensureIndexes()
 
         try {
             return transactionTemplate.execute {
                 val receipt = mongoTemplate.findById(commandId, CommandReceipt::class.java)
                 if (receipt != null) {
-                    check(receipt.fingerprint == commandFingerprint) {
-                        "Idempotency key was already used for a different command."
-                    }
-                    return@execute receipt.aggregateIdentifier
+                    if (receipt.fingerprint != commandFingerprint) throw IdempotencyKeyReusedException()
+                    return@execute receipt.toResult()
                 }
 
                 val latest = mongoTemplate.find(
@@ -49,9 +44,7 @@ class MongoEventStore(
                     EventModel::class.java,
                 ).firstOrNull()?.version ?: -1
 
-                check(latest == expectedVersion) {
-                    "Account $aggregateId changed concurrently; expected version $expectedVersion but found $latest."
-                }
+                if (latest != expectedVersion) throw ConcurrencyConflictException(aggregateId)
 
                 newEvents.forEachIndexed { index, event ->
                     event.aggregateId = aggregateId
@@ -66,28 +59,31 @@ class MongoEventStore(
                         ),
                     )
                 }
-                mongoTemplate.insert(CommandReceipt(commandId, aggregateId, commandFingerprint))
-                aggregateId
+                val version = expectedVersion + newEvents.size
+                mongoTemplate.insert(CommandReceipt(commandId, aggregateId, commandFingerprint, version))
+                CommandResult(aggregateId, version)
             }
-        } catch (exception: DuplicateKeyException) {
+        } catch (exception: RuntimeException) {
+            if (!isWriteConflict(exception)) throw exception
+            // Another transaction wrote the same receipt or event version, or the commit outcome is unknown.
+            // If the same command has committed, return its result; otherwise the caller retries against
+            // fresh state.
             val receipt = mongoTemplate.findById(commandId, CommandReceipt::class.java)
             if (receipt != null && receipt.fingerprint == commandFingerprint) {
-                return receipt.aggregateIdentifier
+                return receipt.toResult()
             }
-            if (receipt != null) {
-                throw IllegalStateException("Idempotency key was already used for a different command.", exception)
-            }
-            throw IllegalStateException("Account $aggregateId changed concurrently; reload and retry.", exception)
+            if (receipt != null) throw IdempotencyKeyReusedException(exception)
+            throw ConcurrencyConflictException(aggregateId, exception)
         }
     }
 
-    override fun findCommandResult(commandId: String, commandFingerprint: String): String? {
+    override fun findCommandResult(commandId: String, commandFingerprint: String): CommandResult? {
         val receipt = mongoTemplate.findById(commandId, CommandReceipt::class.java) ?: return null
-        check(receipt.fingerprint == commandFingerprint) {
-            "Idempotency key was already used for a different command."
-        }
-        return receipt.aggregateIdentifier
+        if (receipt.fingerprint != commandFingerprint) throw IdempotencyKeyReusedException()
+        return receipt.toResult()
     }
+
+    private fun CommandReceipt.toResult() = CommandResult(aggregateIdentifier, version)
 
     override fun getEvents(aggregateId: String): List<BaseEvent> =
         mongoTemplate.find(
@@ -117,18 +113,21 @@ class MongoEventStore(
             String::class.java,
         )
 
-    private fun ensureIndexes() {
-        if (indexesReady.get()) return
-        synchronized(indexesReady) {
-            if (indexesReady.get()) return
-            mongoTemplate.indexOps(EventModel::class.java).createIndex(
-                Index()
-                    .on("aggregateIdentifier", Sort.Direction.ASC)
-                    .on("version", Sort.Direction.ASC)
-                    .unique()
-                    .named("aggregate_version_unique"),
-            )
-            indexesReady.set(true)
-        }
+    // Inside a transaction, MongoDB reports a competing insert as WriteConflict (112), which Spring
+    // translates to DataIntegrityViolationException rather than DuplicateKeyException; a conflict found
+    // at commit time arrives as a TransactionSystemException instead. Both carry the MongoException.
+    private fun isWriteConflict(exception: RuntimeException): Boolean =
+        generateSequence<Throwable>(exception) { it.cause }
+            .filterIsInstance<MongoException>()
+            .any { error ->
+                error.code == WRITE_CONFLICT ||
+                    error.code == DUPLICATE_KEY ||
+                    error.hasErrorLabel(MongoException.TRANSIENT_TRANSACTION_ERROR_LABEL) ||
+                    error.hasErrorLabel(MongoException.UNKNOWN_TRANSACTION_COMMIT_RESULT_LABEL)
+            }
+
+    private companion object {
+        const val WRITE_CONFLICT = 112
+        const val DUPLICATE_KEY = 11000
     }
 }

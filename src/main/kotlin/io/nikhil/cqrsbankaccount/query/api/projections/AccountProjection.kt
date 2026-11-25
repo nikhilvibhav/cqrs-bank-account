@@ -1,10 +1,10 @@
 package io.nikhil.cqrsbankaccount.query.api.projections
 
 import io.nikhil.cqrsbankaccount.common.events.AccountClosedEvent
+import io.nikhil.cqrsbankaccount.common.events.AccountEvent
 import io.nikhil.cqrsbankaccount.common.events.AccountOpenedEvent
 import io.nikhil.cqrsbankaccount.common.events.FundsDepositedEvent
 import io.nikhil.cqrsbankaccount.common.events.FundsWithdrawnEvent
-import io.nikhil.cqrsbankaccount.core.events.BaseEvent
 import io.nikhil.cqrsbankaccount.query.api.models.AccountView
 import org.springframework.dao.DuplicateKeyException
 import org.springframework.data.mongodb.core.MongoTemplate
@@ -17,7 +17,7 @@ import org.springframework.stereotype.Component
 @Component
 class AccountProjection(private val mongoTemplate: MongoTemplate) {
     @ServiceActivator(inputChannel = "accountEventChannel")
-    fun project(event: BaseEvent) {
+    fun project(event: AccountEvent) {
         val accountId = requireNotNull(event.aggregateId) { "Account event is missing its aggregate ID." }
         val current = mongoTemplate.findById(accountId, AccountView::class.java)
 
@@ -50,6 +50,7 @@ class AccountProjection(private val mongoTemplate: MongoTemplate) {
         }
 
         val update = when (event) {
+            // Only for rows written before the read model stored versions (version -1).
             is AccountOpenedEvent -> {
                 check(current.version == -1 && event.version == 0) {
                     "Account $accountId has no opening event at version zero."
@@ -67,8 +68,6 @@ class AccountProjection(private val mongoTemplate: MongoTemplate) {
             is FundsWithdrawnEvent -> Update().inc("balance", event.amount.negate())
 
             is AccountClosedEvent -> Update().set("closed", true)
-
-            else -> throw IllegalArgumentException("Unsupported event: ${event.javaClass.simpleName}")
         }.set("version", event.version)
 
         val result = mongoTemplate.updateFirst(

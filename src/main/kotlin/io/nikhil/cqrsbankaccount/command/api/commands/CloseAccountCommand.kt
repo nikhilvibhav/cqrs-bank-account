@@ -1,5 +1,6 @@
 package io.nikhil.cqrsbankaccount.command.api.commands
 
-import io.nikhil.cqrsbankaccount.core.commands.BaseCommand
-
-data class CloseAccountCommand(val accountId: String) : BaseCommand()
+data class CloseAccountCommand(
+    override val accountId: String,
+    override val idempotencyKey: String? = null,
+) : AccountCommand()

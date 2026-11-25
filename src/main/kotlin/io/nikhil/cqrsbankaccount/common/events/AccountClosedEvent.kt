@@ -1,5 +1,6 @@
 package io.nikhil.cqrsbankaccount.common.events
 
-import io.nikhil.cqrsbankaccount.core.events.BaseEvent
+import org.springframework.data.annotation.TypeAlias
 
-data class AccountClosedEvent(val accountId: String) : BaseEvent(aggregateId = accountId)
+@TypeAlias("AccountClosed")
+data class AccountClosedEvent(val accountId: String) : AccountEvent(accountId)
