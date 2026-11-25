@@ -82,7 +82,7 @@ Amounts must be positive (an opening balance may be zero), with at most 2 decima
 
 The client creates a unique opaque key (for example, a UUID) for each logical write and reuses that key with the exact same request if retrying after a timeout or uncertain response. A repeated key and payload returns the original result without appending another event. Reusing the key with a different operation or payload is rejected. Keys are optional; requests without one are treated as new commands on every attempt. Keys are global rather than per client, because the API has no authentication yet.
 
-A key is remembered for `app.idempotency.receipt-ttl` (default 24 hours); after that, a request with the same key runs as a new command. Only successful commands are remembered: if a command is rejected (for example, insufficient funds), a retry with the same key runs again against the account's current state and may succeed.
+A key is remembered for 24 hours (a TTL index on `commandReceipts`); after that, a request with the same key runs as a new command. Only successful commands are remembered: if a command is rejected (for example, insufficient funds), a retry with the same key runs again against the account's current state and may succeed.
 
 ### Account rules and consistency
 
@@ -102,7 +102,13 @@ Every instance with `app.projection.enabled=true` follows the stream. That is sa
 
 To rebuild the read model from the event store, stop the application, drop the `accounts`, `projectionCheckpoints` and `projectionRetries` collections, and start it again. Without a checkpoint, the worker replays every account's events.
 
-Indexes, including the TTL index that expires idempotency receipts, are created at startup, so the application needs MongoDB to start. Stored events record a stable type alias (for example `AccountOpened`) rather than a Kotlin class name; see `AccountEvent` for how to evolve them.
+### Database migrations
+
+Indexes and data changes are applied by [Flamingock](https://docs.flamingock.io/) from the change units in `src/main/kotlin/io/nikhil/cqrsbankaccount/migrations`. Each runs once per database, in file-name order (`_0001__CreateIndexes`, `_0002__…`), and is recorded in the `flamingockAuditLog` collection; a lock in `flamingockLock` makes concurrent instances take turns. Migrations run while the application starts, before it serves requests or projects events, and a failed migration stops it from starting, so the application needs MongoDB to start.
+
+A released change unit is never edited. To change something, add the next numbered one, for example a `collMod` to change the 24-hour receipt TTL. Prefer idempotent changes, and mark index changes `transactional = false`, since MongoDB cannot create indexes inside a multi-document transaction.
+
+Stored events record a stable type alias (for example `AccountOpened`) rather than a Kotlin class name; see `AccountEvent` for how to evolve them.
 
 ## Tests and CI
 

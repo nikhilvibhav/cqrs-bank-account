@@ -4,6 +4,7 @@ plugins {
     id("org.springframework.boot") version "4.0.6"
     id("io.spring.dependency-management") version "1.1.7"
     id("com.diffplug.spotless") version "8.12.0"
+    id("io.flamingock") version "1.4.5"
 }
 
 group = "io.nikhil"
@@ -26,6 +27,9 @@ dependencies {
     implementation("org.springframework.boot:spring-boot-starter-webmvc")
     implementation("org.jetbrains.kotlin:kotlin-reflect")
     implementation("org.springdoc:springdoc-openapi-starter-webmvc-ui:3.0.2")
+    // The flamingock plugin adds the other Flamingock libraries and its annotation processor, but not an
+    // audit store.
+    implementation("io.flamingock:flamingock-mongodb-sync-auditstore")
     implementation("tools.jackson.module:jackson-module-kotlin")
     developmentOnly("org.springframework.boot:spring-boot-devtools")
     testImplementation("org.springframework.boot:spring-boot-starter-test")
@@ -33,6 +37,12 @@ dependencies {
     testImplementation("org.testcontainers:testcontainers-mongodb")
     testImplementation("org.jetbrains.kotlin:kotlin-test-junit5")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
+}
+
+flamingock {
+    community()
+    springboot()
+    mongodb()
 }
 
 kotlin {

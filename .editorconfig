@@ -16,3 +16,6 @@ ktlint_class_signature_rule_force_multiline_when_parameter_count_greater_or_equa
 # Start a multi-line expression body on the line after `=`, as the codebase already does.
 ktlint_function_signature_body_expression_wrapping = multiline
 
+# Flamingock orders change units by a _NNNN__Name class and file name.
+[src/main/kotlin/io/nikhil/cqrsbankaccount/migrations/_*.kt]
+ktlint_standard_class-naming = disabled

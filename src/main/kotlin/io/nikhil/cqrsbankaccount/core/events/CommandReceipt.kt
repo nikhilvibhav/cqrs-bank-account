@@ -6,8 +6,7 @@ import java.time.Instant
 
 // Recorded for every command, with or without a client idempotency key: when a commit's outcome is
 // unknown, the retry finds this receipt instead of applying the command a second time. A TTL index on
-// createdAt removes receipts after app.idempotency.receipt-ttl; receipts written before createdAt
-// existed have no such field and are kept.
+// createdAt (see the migrations package) removes receipts after 24 hours.
 @Document("commandReceipts")
 data class CommandReceipt(
     @Id val commandId: String,
