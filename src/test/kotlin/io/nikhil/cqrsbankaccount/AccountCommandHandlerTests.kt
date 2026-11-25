@@ -6,7 +6,6 @@ import io.nikhil.cqrsbankaccount.common.dtos.AccountType
 import io.nikhil.cqrsbankaccount.core.infra.EventStore
 import org.junit.jupiter.api.Test
 import org.mockito.ArgumentMatchers.anyString
-import org.mockito.ArgumentMatchers.anyString
 import org.mockito.Mockito
 import org.mockito.Mockito.never
 import org.mockito.Mockito.verify

@@ -88,17 +88,21 @@ class AccountCommandHandler(
                 command.accountType.name,
                 command.openingBalance.stripTrailingZeros().toPlainString(),
             ).joinToString("\u0000")
+
             is DepositFundsCommand -> listOf(
                 "deposit",
                 command.accountId,
                 command.amount.stripTrailingZeros().toPlainString(),
             ).joinToString("\u0000")
+
             is WithdrawFundsCommand -> listOf(
                 "withdraw",
                 command.accountId,
                 command.amount.stripTrailingZeros().toPlainString(),
             ).joinToString("\u0000")
+
             is CloseAccountCommand -> "close\u0000${command.accountId}"
+
             else -> throw IllegalArgumentException("Unsupported command: ${command.javaClass.simpleName}")
         }
         return MessageDigest.getInstance("SHA-256")

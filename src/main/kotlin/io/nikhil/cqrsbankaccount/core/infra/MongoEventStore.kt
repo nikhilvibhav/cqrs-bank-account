@@ -5,8 +5,8 @@ import io.nikhil.cqrsbankaccount.core.events.CommandReceipt
 import io.nikhil.cqrsbankaccount.core.events.EventModel
 import org.springframework.dao.DuplicateKeyException
 import org.springframework.data.domain.Sort
-import org.springframework.data.mongodb.core.index.Index
 import org.springframework.data.mongodb.core.MongoTemplate
+import org.springframework.data.mongodb.core.index.Index
 import org.springframework.data.mongodb.core.query.Criteria
 import org.springframework.data.mongodb.core.query.Query
 import org.springframework.stereotype.Repository

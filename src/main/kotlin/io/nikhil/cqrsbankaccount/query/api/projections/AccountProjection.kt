@@ -24,7 +24,7 @@ class AccountProjection(private val mongoTemplate: MongoTemplate) {
         if (current != null && current.version >= event.version) return
         if (current == null) {
             check(event is AccountOpenedEvent && event.version == 0) {
-                "Cannot project account ${accountId}: expected its opening event before version ${event.version}."
+                "Cannot project account $accountId: expected its opening event before version ${event.version}."
             }
             try {
                 mongoTemplate.insert(
@@ -61,9 +61,13 @@ class AccountProjection(private val mongoTemplate: MongoTemplate) {
                     .set("createdAt", event.createdAt)
                     .set("closed", false)
             }
+
             is FundsDepositedEvent -> Update().inc("balance", event.amount)
+
             is FundsWithdrawnEvent -> Update().inc("balance", event.amount.negate())
+
             is AccountClosedEvent -> Update().set("closed", true)
+
             else -> throw IllegalArgumentException("Unsupported event: ${event.javaClass.simpleName}")
         }.set("version", event.version)
 

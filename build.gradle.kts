@@ -3,6 +3,7 @@ plugins {
     kotlin("plugin.spring") version "2.3.21"
     id("org.springframework.boot") version "4.0.6"
     id("io.spring.dependency-management") version "1.1.7"
+    id("com.diffplug.spotless") version "8.12.0"
 }
 
 group = "io.nikhil"
@@ -44,5 +45,16 @@ tasks.withType<Test> {
     testLogging {
         events("failed")
         exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
+    }
+}
+
+spotless {
+    kotlin {
+        target("src/**/*.kt")
+        ktlint("1.8.0").setEditorConfigPath("$rootDir/.editorconfig")
+    }
+    kotlinGradle {
+        target("*.gradle.kts")
+        ktlint("1.8.0").setEditorConfigPath("$rootDir/.editorconfig")
     }
 }

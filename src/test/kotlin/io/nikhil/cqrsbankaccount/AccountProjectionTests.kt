@@ -109,12 +109,13 @@ class AccountProjectionTests {
         verify(eventStore).getEventsAfter(anyString(), anyInt())
     }
 
-    private fun accountView(version: Int) = AccountView(
-        id = "account-1",
-        accountHolder = "Ada Lovelace",
-        accountType = AccountType.SAVINGS,
-        balance = BigDecimal("15"),
-        createdAt = Instant.EPOCH,
-        version = version,
-    )
+    private fun accountView(version: Int) =
+        AccountView(
+            id = "account-1",
+            accountHolder = "Ada Lovelace",
+            accountType = AccountType.SAVINGS,
+            balance = BigDecimal("15"),
+            createdAt = Instant.EPOCH,
+            version = version,
+        )
 }

@@ -35,7 +35,9 @@ class AccountAggregate private constructor(private val accountId: String) {
 
     fun close() {
         requireOpen()
-        check(balance.compareTo(BigDecimal.ZERO) == 0) { "An account must have a zero balance before it can be closed." }
+        check(balance.compareTo(BigDecimal.ZERO) == 0) {
+            "An account must have a zero balance before it can be closed."
+        }
         record(AccountClosedEvent(accountId))
     }
 
@@ -61,17 +63,20 @@ class AccountAggregate private constructor(private val accountId: String) {
                 balance = event.openingBalance
                 isOpen = true
             }
+
             is FundsDepositedEvent -> {
                 check(isOpen) { "The account is closed or has not been opened." }
                 requirePositive(event.amount)
                 balance += event.amount
             }
+
             is FundsWithdrawnEvent -> {
                 check(isOpen) { "The account is closed or has not been opened." }
                 requirePositive(event.amount)
                 check(balance >= event.amount) { "Insufficient funds." }
                 balance -= event.amount
             }
+
             is AccountClosedEvent -> {
                 check(isOpen) { "The account is closed or has not been opened." }
                 check(balance.compareTo(BigDecimal.ZERO) == 0) {
@@ -79,6 +84,7 @@ class AccountAggregate private constructor(private val accountId: String) {
                 }
                 isOpen = false
             }
+
             else -> error("Unsupported account event: ${event.javaClass.simpleName}")
         }
 

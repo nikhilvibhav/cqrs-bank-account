@@ -79,4 +79,11 @@ Run tests locally:
 bash ./gradlew test --no-daemon
 ```
 
-The Mongo persistence integration tests start a MongoDB replica set with Testcontainers. They verify event and receipt persistence, idempotency, expected-version checks, and idempotent projection updates. They run when Docker is available and are skipped otherwise. GitHub Actions runs the complete test suite for pull requests targeting `main` and for pushes to `main`, using Java 25 and Docker.
+Kotlin sources and Gradle scripts are formatted with [Spotless](https://github.com/diffplug/spotless) and ktlint, using the rules in `.editorconfig`. `check` (and therefore `build`) fails on unformatted code:
+
+```shell
+bash ./gradlew spotlessCheck   # report violations
+bash ./gradlew spotlessApply   # fix them
+```
+
+The Mongo persistence integration tests start a MongoDB replica set with Testcontainers. They verify event and receipt persistence, idempotency, expected-version checks, and idempotent projection updates. They run when Docker is available and are skipped otherwise. GitHub Actions runs the formatting check and the complete test suite for pull requests targeting `main` and for pushes to `main`, using Java 25 and Docker.
