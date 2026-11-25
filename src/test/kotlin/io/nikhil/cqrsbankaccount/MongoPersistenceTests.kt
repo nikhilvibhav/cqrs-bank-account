@@ -174,7 +174,7 @@ class MongoPersistenceTests {
     companion object {
         @Container
         @JvmField
-        val mongo = MongoDBContainer("mongo:8.0.17")
+        val mongo: MongoDBContainer = MongoDBContainer("mongo:8.0.17")
             .withReplicaSet()
             .withCommand("--replSet", "docker-rs", "--wiredTigerCacheSizeGB", "0.25")
 

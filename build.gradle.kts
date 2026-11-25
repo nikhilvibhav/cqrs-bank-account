@@ -9,10 +9,8 @@ group = "io.nikhil"
 version = "0.0.1-SNAPSHOT"
 description = "cqrs-bank-account"
 
-java {
-    toolchain {
-        languageVersion = JavaLanguageVersion.of(25)
-    }
+kotlin {
+    jvmToolchain(25)
 }
 
 repositories {
