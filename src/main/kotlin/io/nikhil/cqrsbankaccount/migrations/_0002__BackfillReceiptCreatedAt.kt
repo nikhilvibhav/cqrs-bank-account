@@ -11,12 +11,17 @@ import io.nikhil.cqrsbankaccount.migrations.MigrationConfiguration.Companion.ACC
 import java.time.Clock
 import java.util.Date
 
-// Receipts written before CommandReceipt.createdAt existed are ignored by the TTL index and would be kept
-// forever. Stamping them with the migration time lets them expire 24 hours from now. Idempotent, so it
-// does not need a transaction.
+/**
+ * Sets `createdAt` on command receipts that lack it.
+ *
+ * Receipts written before `CommandReceipt.createdAt` existed are ignored by the TTL index and would be kept
+ * forever. Stamping them with the migration time lets them expire 24 hours from now. Idempotent, so it
+ * does not need a transaction.
+ */
 @TargetSystem(id = ACCOUNT_DATABASE)
 @Change(id = "backfill-receipt-created-at", author = "Nikhil Vibhav", transactional = false)
 class _0002__BackfillReceiptCreatedAt {
+    /** Stamps every receipt without a `createdAt` with the current time from [clock]. */
     @Apply
     fun apply(database: MongoDatabase, clock: Clock) {
         database.getCollection("commandReceipts").updateMany(
@@ -25,7 +30,7 @@ class _0002__BackfillReceiptCreatedAt {
         )
     }
 
-    // Nothing to undo: a partly applied backfill is completed by applying it again.
+    /** Nothing to undo: a partly applied backfill is completed by applying it again. */
     @Rollback
     fun rollback() = Unit
 }

@@ -21,12 +21,20 @@ import org.springframework.web.context.request.WebRequest
 import org.springframework.web.method.annotation.HandlerMethodValidationException
 import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExceptionHandler
 
-// Extending ResponseEntityExceptionHandler makes Spring MVC's own errors (unreadable body, missing
-// header, type mismatch) use the same RFC 9457 problem format as domain errors.
+/**
+ * Turns exceptions raised while handling a request into RFC 9457 problem details.
+ *
+ * Extending [ResponseEntityExceptionHandler] makes Spring MVC's own errors (unreadable body, missing header,
+ * type mismatch) use the same problem format as domain errors.
+ */
 @RestControllerAdvice
 class ApiExceptionHandler : ResponseEntityExceptionHandler() {
     private val log = LoggerFactory.getLogger(ApiExceptionHandler::class.java)
 
+    /**
+     * Maps each [DomainException] to its HTTP status and a short title, keeping the exception's message as
+     * the problem's detail.
+     */
     @ExceptionHandler(DomainException::class)
     fun domainException(exception: DomainException): ProblemDetail {
         val (status, title) = when (exception) {
@@ -41,7 +49,10 @@ class ApiExceptionHandler : ResponseEntityExceptionHandler() {
         return ProblemDetail.forStatusAndDetail(status, exception.message).apply { this.title = title }
     }
 
-    // Invalid request body: list each failed field rather than Spring's generic "Invalid request content."
+    /**
+     * Handles an invalid request body by listing each failed field in an `errors` property, rather than
+     * only Spring's generic "Invalid request content."
+     */
     override fun handleMethodArgumentNotValid(
         ex: MethodArgumentNotValidException,
         headers: HttpHeaders,
@@ -52,7 +63,10 @@ class ApiExceptionHandler : ResponseEntityExceptionHandler() {
         return super.handleMethodArgumentNotValid(ex, headers, status, request)
     }
 
-    // Invalid query parameter, such as a page size above the maximum.
+    /**
+     * Handles an invalid query parameter, such as a page size above the maximum, by listing each failed
+     * parameter in an `errors` property.
+     */
     override fun handleHandlerMethodValidationException(
         ex: HandlerMethodValidationException,
         headers: HttpHeaders,
@@ -66,8 +80,13 @@ class ApiExceptionHandler : ResponseEntityExceptionHandler() {
         return super.handleHandlerMethodValidationException(ex, headers, status, request)
     }
 
+    /** One entry of a problem's `errors` property. */
     private fun fieldError(field: String?, message: String?) = mapOf("field" to field, "message" to message)
 
+    /**
+     * Logs any other exception and returns a 500 without its message, since it is a defect whose details
+     * must not reach the client.
+     */
     @ExceptionHandler(Exception::class)
     fun unexpectedException(exception: Exception): ProblemDetail {
         log.error("Unhandled exception while processing a request.", exception)

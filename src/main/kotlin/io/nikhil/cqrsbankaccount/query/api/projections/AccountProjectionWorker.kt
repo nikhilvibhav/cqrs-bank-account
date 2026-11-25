@@ -25,16 +25,20 @@ import java.time.Duration
 import java.time.Instant
 import java.util.concurrent.TimeUnit
 
-// Keeps the account read model up to date by following the event store's change stream.
-//
-// The stream delivers inserts in commit order, and its resume token is the projection's single global
-// checkpoint. Each change only says which account changed: the worker then applies every event after
-// the version the read model has stored for that account, so duplicate notifications are harmless and
-// a missed or failed event is repaired by the next pass over that account. Accounts that fail are kept
-// in projectionRetries and retried every app.projection.retry-interval.
-//
-// Every running instance follows the stream; the read model's version check keeps that safe, but the
-// work is repeated. Run the projection on one instance (app.projection.enabled) to avoid it.
+/**
+ * Keeps the account read model up to date by following the event store's change stream.
+ *
+ * The stream delivers inserts in commit order, and its resume token is the projection's single global
+ * checkpoint. Each change only says which account changed: the worker then applies every event after the
+ * version the read model has stored for that account, so duplicate notifications are harmless and a
+ * missed or failed event is repaired by the next pass over that account. Accounts that fail are kept in
+ * `projectionRetries` and retried every `app.projection.retry-interval`.
+ *
+ * Every running instance follows the stream; the read model's version check keeps that safe, but the work
+ * is repeated. Run the projection on one instance (`app.projection.enabled`) to avoid it.
+ *
+ * The worker runs on its own daemon thread, started and stopped with the application context.
+ */
 @Component
 @ConditionalOnProperty(name = ["app.projection.enabled"], havingValue = "true", matchIfMissing = true)
 class AccountProjectionWorker(
@@ -50,11 +54,13 @@ class AccountProjectionWorker(
     private var running = false
     private var thread: Thread? = null
 
+    /** Starts following the change stream on a background thread. */
     override fun start() {
         running = true
         thread = Thread.ofPlatform().name("account-projection").daemon().start(::run)
     }
 
+    /** Asks the background thread to stop and waits up to ten seconds for it. */
     override fun stop() {
         running = false
         thread?.join(Duration.ofSeconds(10))
@@ -63,8 +69,11 @@ class AccountProjectionWorker(
 
     override fun isRunning(): Boolean = running
 
-    // Applies every event the read model has not yet applied for one account. Returns false, after
-    // recording the account for retry, if that fails.
+    /**
+     * Applies every event the read model has not yet applied for one account.
+     *
+     * @return true on success; false, after recording the account for retry, if that fails.
+     */
     fun projectAccount(accountId: String): Boolean =
         try {
             val appliedVersion = accountProjection.getAppliedVersion(accountId)
@@ -80,6 +89,11 @@ class AccountProjectionWorker(
             false
         }
 
+    /**
+     * The background thread's loop: follows the change stream and reopens it after a failure. When the
+     * saved position has fallen out of the oplog, the checkpoint is dropped so the next pass catches up
+     * every account from the event store.
+     */
     private fun run() {
         while (running) {
             try {
@@ -100,6 +114,10 @@ class AccountProjectionWorker(
         }
     }
 
+    /**
+     * Opens the change stream at the saved checkpoint and projects each change until the worker stops,
+     * retrying failed accounts every [retryInterval] and saving the stream position as it advances.
+     */
     private fun followEventStore() {
         val savedToken = mongoTemplate.findById<ProjectionCheckpoint>(CHECKPOINT)?.resumeToken?.let(BsonDocument::parse)
         val changes = mongoTemplate.getCollection(mongoTemplate.getCollectionName(EventModel::class.java))
@@ -131,10 +149,12 @@ class AccountProjectionWorker(
         }
     }
 
+    /** Projects the account whose event [change] inserted. */
     private fun projectChange(change: ChangeStreamDocument<Document>) {
         change.fullDocument?.getString("aggregateIdentifier")?.let(::projectAccount)
     }
 
+    /** Projects every account recorded for retry, removing those that now succeed. */
     private fun retryFailedAccounts() {
         mongoTemplate.findAll<ProjectionRetry>().forEach { retry ->
             if (projectAccount(retry.accountId)) {
@@ -147,6 +167,7 @@ class AccountProjectionWorker(
         }
     }
 
+    /** Whether [exception] means the change stream cannot resume from its saved position. */
     private fun isHistoryLost(exception: RuntimeException): Boolean =
         generateSequence<Throwable>(exception) { it.cause }
             .filterIsInstance<MongoException>()

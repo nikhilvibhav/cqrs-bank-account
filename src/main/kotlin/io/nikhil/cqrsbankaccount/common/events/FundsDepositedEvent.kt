@@ -5,6 +5,12 @@ import org.springframework.data.mongodb.core.mapping.Field
 import org.springframework.data.mongodb.core.mapping.FieldType
 import java.math.BigDecimal
 
+/**
+ * Recorded when funds are deposited into an account.
+ *
+ * @property accountId the account that was credited.
+ * @property amount the amount deposited; always positive.
+ */
 @TypeAlias("FundsDeposited")
 data class FundsDepositedEvent(
     val accountId: String,

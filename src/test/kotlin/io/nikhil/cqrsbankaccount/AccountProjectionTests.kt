@@ -31,6 +31,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
+/** Unit tests of the projection and the worker's per-account catch-up, against a mocked MongoTemplate. */
 class AccountProjectionTests {
     @Test
     fun `projection ignores an already applied event`() {

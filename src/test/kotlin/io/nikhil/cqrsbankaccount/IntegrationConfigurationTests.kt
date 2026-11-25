@@ -10,6 +10,7 @@ import org.springframework.integration.channel.DirectChannel
 import org.testcontainers.junit.jupiter.Testcontainers
 import kotlin.test.assertEquals
 
+/** Checks that the application context wires each channel to exactly one handler. */
 @Testcontainers(disabledWithoutDocker = true)
 @SpringBootTest(properties = ["app.projection.enabled=false"])
 class IntegrationConfigurationTests : MongoIntegrationTest() {

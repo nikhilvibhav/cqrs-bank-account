@@ -14,6 +14,13 @@ import org.springframework.data.mongodb.core.query.Query
 import org.springframework.stereotype.Repository
 import org.springframework.transaction.support.TransactionTemplate
 
+/**
+ * [EventStore] backed by the `eventStore` and `commandReceipts` MongoDB collections.
+ *
+ * A command's events and its receipt are written in one multi-document transaction, so MongoDB must run as
+ * a replica set. The unique index on aggregate and version makes a concurrent append of the same version
+ * fail rather than fork the stream.
+ */
 @Repository
 class MongoEventStore(
     private val mongoTemplate: MongoTemplate,
@@ -66,8 +73,7 @@ class MongoEventStore(
         } catch (exception: RuntimeException) {
             if (!isWriteConflict(exception)) throw exception
             // Another transaction wrote the same receipt or event version, or the commit outcome is unknown.
-            // If the same command has committed, return its result; otherwise the caller retries against
-            // fresh state.
+            // If the same command has committed, return its result; otherwise the caller retries.
             val receipt = mongoTemplate.findById(commandId, CommandReceipt::class.java)
             if (receipt != null && receipt.fingerprint == commandFingerprint) {
                 return receipt.toResult()
@@ -83,6 +89,7 @@ class MongoEventStore(
         return receipt.toResult()
     }
 
+    /** The result the command that wrote this receipt returned. */
     private fun CommandReceipt.toResult() = CommandResult(aggregateIdentifier, version)
 
     override fun getEvents(aggregateId: String): List<BaseEvent> =
@@ -113,9 +120,13 @@ class MongoEventStore(
             String::class.java,
         )
 
-    // Inside a transaction, MongoDB reports a competing insert as WriteConflict (112), which Spring
-    // translates to DataIntegrityViolationException rather than DuplicateKeyException; a conflict found
-    // at commit time arrives as a TransactionSystemException instead. Both carry the MongoException.
+    /**
+     * Whether [exception] means a competing write or an unknown commit outcome, rather than a defect.
+     *
+     * Inside a transaction, MongoDB reports a competing insert as WriteConflict (112), which Spring
+     * translates to `DataIntegrityViolationException` rather than `DuplicateKeyException`; a conflict found
+     * at commit time arrives as a `TransactionSystemException` instead. Both carry the [MongoException].
+     */
     private fun isWriteConflict(exception: RuntimeException): Boolean =
         generateSequence<Throwable>(exception) { it.cause }
             .filterIsInstance<MongoException>()

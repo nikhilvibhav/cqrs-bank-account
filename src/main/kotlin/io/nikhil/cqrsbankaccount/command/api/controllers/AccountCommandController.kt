@@ -20,15 +20,28 @@ import org.springframework.web.bind.annotation.RestController
 import org.springframework.web.servlet.support.ServletUriComponentsBuilder
 import java.util.UUID
 
+/**
+ * The write side of the accounts API.
+ *
+ * Each endpoint turns its request into an [AccountCommand] and sends it through the [CommandDispatcher].
+ * Every endpoint accepts an optional `Idempotency-Key` header: a retry with the same key and the same
+ * request returns the original result instead of applying the command again, and the same key with a
+ * different request is rejected. A successful response's `ETag` is the account's event version after the
+ * command; `GET /api/v1/accounts/{id}` shows the change once its own `ETag` has reached that version.
+ */
 @RestController
 @RequestMapping("/api/v1/accounts")
 class AccountCommandController(private val commandDispatcher: CommandDispatcher) {
+    /**
+     * Opens an account with a server-generated id and returns `201 Created` with its location.
+     *
+     * A replayed idempotency key returns the account opened by the original request, not a new one.
+     */
     @PostMapping
     fun openAccount(
         @Valid @RequestBody request: OpenAccountRequest,
         @RequestHeader(IDEMPOTENCY_KEY, required = false) idempotencyKey: String?,
     ): ResponseEntity<CommandResponse> {
-        // A replayed idempotency key returns the account opened by the original request, not this id.
         val command = OpenAccountCommand(
             accountId = UUID.randomUUID().toString(),
             accountHolder = request.accountHolder,
@@ -44,6 +57,7 @@ class AccountCommandController(private val commandDispatcher: CommandDispatcher)
         return ResponseEntity.created(location).eTagFor(response).body(response)
     }
 
+    /** Deposits funds into account [id]. */
     @PostMapping("/{id}/deposits")
     fun deposit(
         @PathVariable id: String,
@@ -52,6 +66,7 @@ class AccountCommandController(private val commandDispatcher: CommandDispatcher)
     ): ResponseEntity<CommandResponse> =
         ok(send(DepositFundsCommand(id, request.amount, idempotencyKey), "Funds deposited successfully."))
 
+    /** Withdraws funds from account [id]; the account cannot be overdrawn. */
     @PostMapping("/{id}/withdrawals")
     fun withdraw(
         @PathVariable id: String,
@@ -60,7 +75,11 @@ class AccountCommandController(private val commandDispatcher: CommandDispatcher)
     ): ResponseEntity<CommandResponse> =
         ok(send(WithdrawFundsCommand(id, request.amount, idempotencyKey), "Funds withdrawn successfully."))
 
-    // Closing is a state change, not a deletion: the account remains readable with closed = true.
+    /**
+     * Closes account [id], which must have a zero balance.
+     *
+     * Closing is a state change, not a deletion: the account remains readable with `closed = true`.
+     */
     @PostMapping("/{id}/closure")
     fun closeAccount(
         @PathVariable id: String,
@@ -68,6 +87,7 @@ class AccountCommandController(private val commandDispatcher: CommandDispatcher)
     ): ResponseEntity<CommandResponse> =
         ok(send(CloseAccountCommand(id, idempotencyKey), "Bank account closed successfully."))
 
+    /** Dispatches [command] and builds the response body from its result. */
     private fun send(command: AccountCommand, message: String): CommandResponse {
         val result = commandDispatcher.send(command)
         return CommandResponse(result.aggregateId, result.version, message)
@@ -75,6 +95,7 @@ class AccountCommandController(private val commandDispatcher: CommandDispatcher)
 
     private fun ok(response: CommandResponse) = ResponseEntity.ok().eTagFor(response).body(response)
 
+    /** Sets the `ETag` to the account's event version, when the result carries one. */
     private fun ResponseEntity.BodyBuilder.eTagFor(response: CommandResponse) =
         apply { response.version?.let { eTag(it.toString()) } }
 

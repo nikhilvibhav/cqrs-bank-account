@@ -22,6 +22,7 @@ import java.time.ZoneOffset
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 
+/** Unit tests of the command handler's idempotency and conflict retries, against a mocked event store. */
 class AccountCommandHandlerTests {
     private val eventStore = Mockito.mock(EventStore::class.java)
     private val clock = Clock.fixed(Instant.parse("2026-01-02T03:04:05Z"), ZoneOffset.UTC)

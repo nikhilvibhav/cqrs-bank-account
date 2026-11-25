@@ -35,8 +35,12 @@ import kotlin.test.assertTrue
 
 private const val CONTENDERS = 8
 
+/**
+ * Tests the event store, receipts and projection against a real MongoDB replica set. The projection worker
+ * is off so the tests control when events are projected, and commands get [CONTENDERS] attempts so that
+ * every contender in the concurrency tests eventually wins its turn.
+ */
 @Testcontainers(disabledWithoutDocker = true)
-// Enough attempts that every contender in the concurrency tests eventually wins its turn.
 @SpringBootTest(properties = ["app.projection.enabled=false", "app.commands.max-attempts=$CONTENDERS"])
 class MongoPersistenceTests : MongoIntegrationTest() {
     @Autowired
@@ -264,7 +268,7 @@ class MongoPersistenceTests : MongoIntegrationTest() {
         assertEquals(1, mongoTemplate.count(Query(), CommandReceipt::class.java))
     }
 
-    // Starts every task at the same moment so they contend for the same account or receipt.
+    /** Starts every task at the same moment so they contend for the same account or receipt. */
     private fun <T> runConcurrently(task: (Int) -> T): List<Result<T>> {
         val start = CountDownLatch(1)
         val executor = Executors.newFixedThreadPool(CONTENDERS)
