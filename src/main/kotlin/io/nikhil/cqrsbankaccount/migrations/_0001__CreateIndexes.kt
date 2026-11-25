@@ -11,12 +11,18 @@ import io.nikhil.cqrsbankaccount.migrations.MigrationConfiguration.Companion.ACC
 import org.bson.Document
 import java.util.concurrent.TimeUnit
 
-// Indexes cannot be created inside a multi-document transaction, so this change is not transactional.
-// Databases set up by the earlier startup index code already have these indexes; creating an identical
-// index is a no-op, and an older accounts index with different keys is replaced.
+/**
+ * Creates the indexes the application relies on: the event store's unique (aggregate, version) index, the
+ * account list's sort index and the TTL index that expires command receipts.
+ *
+ * Indexes cannot be created inside a multi-document transaction, so this change is not transactional.
+ * Databases set up by the earlier startup index code already have these indexes; creating an identical
+ * index is a no-op, and an older accounts index with different keys is replaced.
+ */
 @TargetSystem(id = ACCOUNT_DATABASE)
 @Change(id = "create-indexes", author = "Nikhil Vibhav", transactional = false)
 class _0001__CreateIndexes {
+    /** Creates the indexes, replacing an `accounts` index named `created_at` that has different keys. */
     @Apply
     fun apply(database: MongoDatabase) {
         database.getCollection("eventStore").createIndex(
@@ -41,8 +47,10 @@ class _0001__CreateIndexes {
         )
     }
 
-    // Deliberately does nothing: these indexes may predate this change, and dropping them would remove
-    // the event store's protection against conflicting writes. Applying again is safe.
+    /**
+     * Deliberately does nothing: these indexes may predate this change, and dropping them would remove the
+     * event store's protection against conflicting writes. Applying again is safe.
+     */
     @Rollback
     fun rollback() = Unit
 }

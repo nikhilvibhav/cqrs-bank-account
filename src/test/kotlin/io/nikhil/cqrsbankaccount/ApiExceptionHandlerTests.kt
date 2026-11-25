@@ -26,6 +26,7 @@ import org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPat
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
 import org.springframework.test.web.servlet.setup.MockMvcBuilders
 
+/** Tests the API's problem responses through MockMvc, with a command handler that throws on demand. */
 class ApiExceptionHandlerTests {
     @ParameterizedTest(name = "{0} -> {1}")
     @MethodSource("domainExceptions")
@@ -90,8 +91,10 @@ class ApiExceptionHandlerTests {
             .contentType(MediaType.APPLICATION_JSON)
             .content("{\"amount\":10}")
 
-    // Wires the real dispatcher to a Spring Integration message handler, as in production, so the test
-    // also covers unwrapping the exception from the MessageHandlingException the handler throws.
+    /**
+     * Wires the real dispatcher to a Spring Integration message handler, as in production, so the test
+     * also covers unwrapping the exception from the MessageHandlingException the handler throws.
+     */
     private fun mockMvcThrowing(exception: RuntimeException): MockMvc {
         val channel = DirectChannel()
         channel.subscribe(

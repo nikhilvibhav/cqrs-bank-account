@@ -9,14 +9,22 @@ import org.springframework.messaging.MessageChannel
 import org.springframework.messaging.MessagingException
 import org.springframework.stereotype.Component
 
+/**
+ * [CommandDispatcher] that sends commands on the `accountCommandChannel` and waits for the handler's reply.
+ */
 @Component
 class SpringIntegrationCommandDispatcher(
     @Qualifier("accountCommandChannel") private val commandChannel: MessageChannel,
 ) : CommandDispatcher {
     private val messagingTemplate = MessagingTemplate()
 
-    // Request/reply: the handler's return value comes back as the reply message, so the command itself
-    // never has to be mutated to carry a result, whichever channel type is used.
+    /**
+     * Sends [command] and returns the handler's reply.
+     *
+     * Request/reply: the handler's return value comes back as the reply message, so the command itself
+     * never has to be mutated to carry a result, whichever channel type is used. An exception thrown by the
+     * handler is rethrown as is, without the messaging exception that wraps it.
+     */
     override fun send(command: BaseCommand): CommandResult {
         val reply = try {
             messagingTemplate.sendAndReceive(commandChannel, MessageBuilder.withPayload(command).build())

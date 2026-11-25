@@ -16,9 +16,22 @@ import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.RestController
 
+/**
+ * The read side of the accounts API, served from the `accounts` read model.
+ *
+ * The read model is updated asynchronously from the event store, so it can briefly lag behind a write.
+ * Each account's `version` tells how far it has caught up.
+ */
 @RestController
 @RequestMapping("/api/v1/accounts")
 class AccountQueryController(private val accounts: AccountViewRepository) {
+    /**
+     * Lists accounts a page at a time, oldest first.
+     *
+     * @param page the zero-based page number.
+     * @param size the page size, from 1 to [MAX_PAGE_SIZE].
+     * @param closed when given, only closed (true) or only open (false) accounts are listed.
+     */
     @GetMapping
     fun listAccounts(
         @RequestParam(defaultValue = "0") @Min(0) page: Int,
@@ -31,8 +44,14 @@ class AccountQueryController(private val accounts: AccountViewRepository) {
         return AccountPage(result.content, page, size, result.totalElements)
     }
 
-    // The ETag is the read model's event version for the account; compare it with the version a write
-    // returned to know whether that write is visible yet.
+    /**
+     * Returns account [id].
+     *
+     * The `ETag` is the read model's event version for the account; compare it with the version a write
+     * returned to know whether that write is visible yet.
+     *
+     * @throws AccountNotFoundException when the read model has no such account.
+     */
     @GetMapping("/{id}")
     fun getAccount(@PathVariable id: String): ResponseEntity<AccountView> {
         val account = accounts.findByIdOrNull(id) ?: throw AccountNotFoundException(id)

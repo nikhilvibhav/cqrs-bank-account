@@ -17,6 +17,7 @@ import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
+/** Unit tests of the account's business rules and of replaying its event history. */
 class AccountAggregateTests {
     @Test
     fun `deposit and withdrawal update balance and can be replayed`() {

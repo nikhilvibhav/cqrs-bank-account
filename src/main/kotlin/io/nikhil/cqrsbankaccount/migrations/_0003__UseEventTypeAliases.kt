@@ -9,12 +9,17 @@ import io.flamingock.api.annotations.Rollback
 import io.flamingock.api.annotations.TargetSystem
 import io.nikhil.cqrsbankaccount.migrations.MigrationConfiguration.Companion.ACCOUNT_DATABASE
 
-// Rewrites events stored with a full Kotlin class name as their _class to the stable @TypeAlias, so the
-// event classes can later be renamed or moved. The names are literals on purpose: this change must keep
-// describing the data as it was, whatever the classes are called later. Idempotent.
+/**
+ * Rewrites events stored with a full Kotlin class name as their `_class` to the stable `@TypeAlias`, so
+ * the event classes can later be renamed or moved.
+ *
+ * The names are literals on purpose: this change must keep describing the data as it was, whatever the
+ * classes are called later. Idempotent.
+ */
 @TargetSystem(id = ACCOUNT_DATABASE)
 @Change(id = "use-event-type-aliases", author = "Nikhil Vibhav", transactional = false)
 class _0003__UseEventTypeAliases {
+    /** Replaces each full class name with its alias. */
     @Apply
     fun apply(database: MongoDatabase) {
         val events = database.getCollection("eventStore")
@@ -23,6 +28,7 @@ class _0003__UseEventTypeAliases {
         }
     }
 
+    /** Restores the full class names. Events stay readable either way. */
     @Rollback
     fun rollback(database: MongoDatabase) {
         val events = database.getCollection("eventStore")

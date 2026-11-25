@@ -14,8 +14,21 @@ import org.springframework.data.mongodb.core.query.Update
 import org.springframework.integration.annotation.ServiceActivator
 import org.springframework.stereotype.Component
 
+/**
+ * Applies account events to the `accounts` read model, one event at a time and in version order.
+ *
+ * Each view stores the version of the latest event applied to it, and every write is conditional on that
+ * version. An event that was already applied is ignored, so delivering an event more than once is
+ * harmless; an event that would leave a gap is rejected, so the caller can fetch the missing ones first.
+ */
 @Component
 class AccountProjection(private val mongoTemplate: MongoTemplate) {
+    /**
+     * Applies [event] to its account's view, creating the view from the opening event.
+     *
+     * @throws IllegalStateException when [event] is not the next version for its account, or when another
+     *   writer changed the view at the same time; applying the account's events again resolves both.
+     */
     @ServiceActivator(inputChannel = "accountEventChannel")
     fun project(event: AccountEvent) {
         val accountId = requireNotNull(event.aggregateId) { "Account event is missing its aggregate ID." }
@@ -86,6 +99,7 @@ class AccountProjection(private val mongoTemplate: MongoTemplate) {
         }
     }
 
+    /** Returns the version of the latest event applied to the account's view, or -1 if there is no view. */
     fun getAppliedVersion(accountId: String): Int =
         mongoTemplate.findById(accountId, AccountView::class.java)?.version ?: -1
 }

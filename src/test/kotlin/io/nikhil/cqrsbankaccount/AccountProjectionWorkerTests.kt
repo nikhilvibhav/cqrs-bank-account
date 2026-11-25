@@ -27,8 +27,10 @@ import java.time.Instant
 import kotlin.test.assertEquals
 import kotlin.test.fail
 
-// Runs the real worker against a MongoDB change stream. The context is closed after the class so its
-// worker does not keep projecting while other test classes use the same database.
+/**
+ * Runs the real worker against a MongoDB change stream. The context is closed after the class so its
+ * worker does not keep projecting while other test classes use the same database.
+ */
 @Testcontainers(disabledWithoutDocker = true)
 @SpringBootTest(properties = ["app.projection.enabled=true", "app.projection.retry-interval=200ms"])
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)

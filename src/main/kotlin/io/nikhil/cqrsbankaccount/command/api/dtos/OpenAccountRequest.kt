@@ -7,6 +7,13 @@ import jakarta.validation.constraints.PositiveOrZero
 import jakarta.validation.constraints.Size
 import java.math.BigDecimal
 
+/**
+ * Request body for opening an account.
+ *
+ * @property accountHolder the account holder's name; not blank and at most 100 characters.
+ * @property accountType the kind of account to open.
+ * @property openingBalance the initial balance in whole cents; zero when omitted, and never negative.
+ */
 data class OpenAccountRequest(
     @field:NotBlank
     @field:Size(max = 100)

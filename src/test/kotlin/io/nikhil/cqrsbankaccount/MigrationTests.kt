@@ -29,6 +29,7 @@ import java.time.ZoneOffset
 import java.util.Date
 import kotlin.test.assertEquals
 
+/** Tests the Flamingock change units against a real MongoDB, including data in its pre-migration shape. */
 @Testcontainers(disabledWithoutDocker = true)
 @SpringBootTest(properties = ["app.projection.enabled=false"])
 class MigrationTests : MongoIntegrationTest() {
@@ -127,7 +128,7 @@ class MigrationTests : MongoIntegrationTest() {
         database.getCollection("eventStore").find().single()
             .get("eventData", Document::class.java).getString("_class")
 
-    // An event as stored before type aliases existed.
+    /** An event as stored before type aliases existed. */
     private fun legacyDeposit(className: String) =
         Document(
             mapOf(
