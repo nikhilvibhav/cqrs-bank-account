@@ -5,21 +5,31 @@ A sample Kotlin/Spring Boot backend demonstrating CQRS, event sourcing, and Spri
 ## Requirements and local setup
 
 - Java 25
-- Docker, for the MongoDB replica set used by this sample
+- Docker with Compose (or Podman), for the MongoDB replica set used by this sample
 
-Start MongoDB in one terminal:
+### Run everything in containers
 
-```shell
-docker run --name cqrs-mongo -p 27017:27017 mongo:8 --replSet rs0 --bind_ip_all
-```
-
-In another terminal, initialize the replica set:
+`compose.yaml` starts MongoDB and the application, building the application image from the `Dockerfile`:
 
 ```shell
-docker exec cqrs-mongo mongosh --eval "rs.initiate()"
+docker compose up --build
 ```
 
-MongoDB transactions require a replica set; a standalone MongoDB server is not sufficient. The application uses the `cqrs_bank_account` database on `localhost:27017`. Set `spring.mongodb.uri` to use a different instance, including its replica-set name.
+The API is then on <http://localhost:8080>. MongoDB's data is kept in the `mongo-data` volume; `docker compose down -v` removes it.
+
+MongoDB runs as a single-member replica set named `rs0`, because the application needs transactions and change streams, which a standalone server does not support. Its health check initiates the replica set on first start, and the application starts once MongoDB has elected itself primary.
+
+The `Dockerfile` builds a layered image like Spring Boot's `bootBuildImage`. It builds the jar with Gradle inside the image, splits it with Spring Boot's jar tools, and copies the `dependencies`, `spring-boot-loader`, `snapshot-dependencies` and `application` layers separately, so a code change only replaces the application layer. The application runs as a non-root user.
+
+### Run the application from Gradle
+
+Start only MongoDB:
+
+```shell
+docker compose up -d mongo
+```
+
+The replica set member is registered as `mongo:27017`, a name only other containers can resolve, so tools on the host such as `mongosh` or Compass must connect with `mongodb://localhost:27017/?directConnection=true`. The application uses the `cqrs_bank_account` database on `localhost:27017`. Set `spring.mongodb.uri` to use a different instance, including its replica-set name.
 
 Run the app:
 
