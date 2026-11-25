@@ -1,0 +1,47 @@
+# The application and the MongoDB replica set it needs.
+#
+#   docker compose up --build     # build the image and start both
+#   docker compose up -d mongo    # only MongoDB, for ./gradlew bootRun or the IDE
+#
+# MongoDB runs as a single-member replica set named rs0: transactions and change streams, which the
+# application relies on, are not available on a standalone server.
+services:
+  mongo:
+    image: mongo:latest
+    command: ["--replSet", "rs0", "--bind_ip_all"]
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo-data:/data/db
+      - mongo-config:/data/configdb
+    # Initiates the replica set on the first check, then reports healthy once this member is primary.
+    # The member is registered as mongo:27017, the name other containers reach it by.
+    healthcheck:
+      test:
+        - CMD
+        - mongosh
+        - --quiet
+        - --eval
+        - >-
+          try { rs.status() } catch (e) { rs.initiate({ _id: 'rs0', members: [{ _id: 0, host: 'mongo:27017' }] }) }
+          quit(db.hello().isWritablePrimary ? 0 : 1)
+      interval: 10s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+      start_interval: 1s
+
+  app:
+    build: .
+    image: cqrs-bank-account:latest
+    environment:
+      SPRING_MONGODB_URI: mongodb://mongo:27017/cqrs_bank_account?replicaSet=rs0
+    ports:
+      - "8080:8080"
+    depends_on:
+      mongo:
+        condition: service_healthy
+
+volumes:
+  mongo-data:
+  mongo-config:
