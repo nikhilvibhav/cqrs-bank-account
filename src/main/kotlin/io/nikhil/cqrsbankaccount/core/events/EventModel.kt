@@ -1,15 +1,10 @@
 package io.nikhil.cqrsbankaccount.core.events
 
 import org.springframework.data.annotation.Id
-import org.springframework.data.mongodb.core.index.CompoundIndex
 import org.springframework.data.mongodb.core.mapping.Document
 import java.util.*
 
-@CompoundIndex(
-    name = "aggregate_version_unique",
-    def = "{'aggregateIdentifier': 1, 'version': 1}",
-    unique = true,
-)
+// Indexes are created by the migrations package.
 @Document(collection = "eventStore")
 data class EventModel(
     @Id var id: String? = null,

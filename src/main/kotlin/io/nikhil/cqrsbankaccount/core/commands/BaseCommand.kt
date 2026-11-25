@@ -1,8 +1,6 @@
 package io.nikhil.cqrsbankaccount.core.commands
 
-import io.nikhil.cqrsbankaccount.core.messages.Message
-
-abstract class BaseCommand(
-    id: String? = null
-) : Message(id) {
+abstract class BaseCommand {
+    // Client-supplied key that makes retries of the same command safe; null means every attempt is new.
+    abstract val idempotencyKey: String?
 }

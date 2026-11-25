@@ -3,7 +3,14 @@ spring:
     name: cqrs-bank-account
   mongodb:
     database: cqrs_bank_account
+flamingock:
+  # Apply MongoDB migrations while the context starts, before the web server and projection worker.
+  management-mode: INITIALIZING_BEAN
 app:
+  commands:
+    # Attempts per command when another request changes the same account concurrently; then 409.
+    max-attempts: 5
   projection:
     enabled: true
-    poll-interval-ms: 1000
+    # How often accounts whose projection failed are retried.
+    retry-interval: 1s

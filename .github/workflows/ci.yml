@@ -28,5 +28,39 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
 
-      - name: Run tests
-        run: bash ./gradlew test --no-daemon
+      - name: Check formatting and run tests
+        run: bash ./gradlew spotlessCheck test --no-daemon
+
+      # Per-class counts on the run's summary page, so skipped tests (e.g. MongoDB tests without Docker)
+      # are visible without downloading the reports.
+      - name: Summarise test results
+        if: always()
+        run: |
+          python3 - <<'EOF' >> "$GITHUB_STEP_SUMMARY"
+          import glob, xml.etree.ElementTree as ET
+          rows, totals = [], [0, 0, 0]
+          for path in sorted(glob.glob("build/test-results/test/*.xml")):
+              suite = ET.parse(path).getroot()
+              counts = [int(suite.get("tests")), int(suite.get("skipped")),
+                        int(suite.get("failures")) + int(suite.get("errors"))]
+              totals = [t + c for t, c in zip(totals, counts)]
+              rows.append(f"| {suite.get('name').rsplit('.', 1)[-1]} | {counts[0]} | {counts[1]} | {counts[2]} |")
+          print("### Test results\n")
+          if not rows:
+              print("No test results were produced.")
+          else:
+              print("| Class | Tests | Skipped | Failed |\n| --- | --- | --- | --- |")
+              print("\n".join(rows))
+              print(f"| **Total** | **{totals[0]}** | **{totals[1]}** | **{totals[2]}** |")
+          EOF
+
+      - name: Upload test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-reports
+          path: |
+            build/reports/tests/test/
+            build/test-results/test/
+          if-no-files-found: warn
+          retention-days: 14

@@ -2,11 +2,17 @@ package io.nikhil.cqrsbankaccount.command.domain
 
 import io.nikhil.cqrsbankaccount.common.dtos.AccountType
 import io.nikhil.cqrsbankaccount.common.events.AccountClosedEvent
+import io.nikhil.cqrsbankaccount.common.events.AccountEvent
 import io.nikhil.cqrsbankaccount.common.events.AccountOpenedEvent
 import io.nikhil.cqrsbankaccount.common.events.FundsDepositedEvent
 import io.nikhil.cqrsbankaccount.common.events.FundsWithdrawnEvent
 import io.nikhil.cqrsbankaccount.core.events.BaseEvent
+import io.nikhil.cqrsbankaccount.core.exceptions.AccountClosedException
+import io.nikhil.cqrsbankaccount.core.exceptions.InsufficientFundsException
+import io.nikhil.cqrsbankaccount.core.exceptions.InvalidCommandException
+import io.nikhil.cqrsbankaccount.core.exceptions.NonZeroBalanceException
 import java.math.BigDecimal
+import java.time.Instant
 
 class AccountAggregate private constructor(private val accountId: String) {
     var version: Int = -1
@@ -16,8 +22,8 @@ class AccountAggregate private constructor(private val accountId: String) {
     var isOpen: Boolean = false
         private set
 
-    private val pendingEvents = mutableListOf<BaseEvent>()
-    val uncommittedEvents: List<BaseEvent>
+    private val pendingEvents = mutableListOf<AccountEvent>()
+    val uncommittedEvents: List<AccountEvent>
         get() = pendingEvents.toList()
 
     fun deposit(amount: BigDecimal) {
@@ -29,57 +35,47 @@ class AccountAggregate private constructor(private val accountId: String) {
     fun withdraw(amount: BigDecimal) {
         requirePositive(amount)
         requireOpen()
-        check(balance >= amount) { "Insufficient funds." }
+        if (balance < amount) throw InsufficientFundsException()
         record(FundsWithdrawnEvent(accountId, amount))
     }
 
     fun close() {
         requireOpen()
-        check(balance.compareTo(BigDecimal.ZERO) == 0) { "An account must have a zero balance before it can be closed." }
+        if (balance.compareTo(BigDecimal.ZERO) != 0) throw NonZeroBalanceException()
         record(AccountClosedEvent(accountId))
     }
 
     private fun requireOpen() {
-        check(isOpen) { "The account is closed or has not been opened." }
+        if (!isOpen) throw AccountClosedException()
     }
 
-    private fun record(event: BaseEvent) {
+    private fun record(event: AccountEvent) {
         event.version = version + 1
         apply(event)
         pendingEvents += event
     }
 
-    private fun apply(event: BaseEvent) {
+    // Events are facts that already happened, so replaying them must not re-check business rules: a rule
+    // that changes later would otherwise make existing accounts impossible to load. Rules are enforced
+    // in the command methods above; only the stream's own integrity is checked here.
+    private fun apply(event: AccountEvent) {
         check(event.aggregateId == accountId) { "Event belongs to a different account." }
         check(event.version == version + 1) { "Account event version is out of sequence." }
+        check((event is AccountOpenedEvent) == (version == -1)) {
+            "An account's event stream must start with, and only contain one, opening event."
+        }
 
         when (event) {
             is AccountOpenedEvent -> {
-                check(!isOpen && version == -1) { "The account has already been opened." }
-                require(event.accountHolder.isNotBlank()) { "Account holder is required." }
-                require(event.openingBalance >= BigDecimal.ZERO) { "Opening balance cannot be negative." }
                 balance = event.openingBalance
                 isOpen = true
             }
-            is FundsDepositedEvent -> {
-                check(isOpen) { "The account is closed or has not been opened." }
-                requirePositive(event.amount)
-                balance += event.amount
-            }
-            is FundsWithdrawnEvent -> {
-                check(isOpen) { "The account is closed or has not been opened." }
-                requirePositive(event.amount)
-                check(balance >= event.amount) { "Insufficient funds." }
-                balance -= event.amount
-            }
-            is AccountClosedEvent -> {
-                check(isOpen) { "The account is closed or has not been opened." }
-                check(balance.compareTo(BigDecimal.ZERO) == 0) {
-                    "An account must have a zero balance before it can be closed."
-                }
-                isOpen = false
-            }
-            else -> error("Unsupported account event: ${event.javaClass.simpleName}")
+
+            is FundsDepositedEvent -> balance += event.amount
+
+            is FundsWithdrawnEvent -> balance -= event.amount
+
+            is AccountClosedEvent -> isOpen = false
         }
 
         version = event.version
@@ -91,22 +87,28 @@ class AccountAggregate private constructor(private val accountId: String) {
             accountHolder: String,
             accountType: AccountType,
             openingBalance: BigDecimal,
+            openedAt: Instant,
         ): AccountAggregate {
-            require(accountId.isNotBlank()) { "Account ID is required." }
-            require(accountHolder.isNotBlank()) { "Account holder is required." }
-            require(openingBalance >= BigDecimal.ZERO) { "Opening balance cannot be negative." }
+            if (accountId.isBlank()) throw InvalidCommandException("Account ID is required.")
+            if (accountHolder.isBlank()) throw InvalidCommandException("Account holder is required.")
+            if (openingBalance < BigDecimal.ZERO) throw InvalidCommandException("Opening balance cannot be negative.")
             return AccountAggregate(accountId).apply {
-                record(AccountOpenedEvent(accountHolder.trim(), accountType, openingBalance, accountId = accountId))
+                record(AccountOpenedEvent(accountHolder.trim(), accountType, openingBalance, openedAt, accountId))
             }
         }
 
         fun rehydrate(accountId: String, history: List<BaseEvent>): AccountAggregate {
             check(history.isNotEmpty()) { "No events found for account $accountId." }
-            return AccountAggregate(accountId).apply { history.forEach(::apply) }
+            return AccountAggregate(accountId).apply {
+                history.forEach { event ->
+                    check(event is AccountEvent) { "Unsupported account event: ${event.javaClass.simpleName}" }
+                    apply(event)
+                }
+            }
         }
 
         private fun requirePositive(amount: BigDecimal) {
-            require(amount > BigDecimal.ZERO) { "Amount must be greater than zero." }
+            if (amount <= BigDecimal.ZERO) throw InvalidCommandException("Amount must be greater than zero.")
         }
     }
 }
